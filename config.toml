@@ -1,0 +1,68 @@
+[io]
+tree = "vf48"
+chunk_size = 100000
+output_dir = "data"  # digitized and histogram files of every source go here
+
+[digitization]
+seed = 1729
+adc_max = 32767
+
+[defaults]
+gain = 1.0
+spe_relative_sigma = 0.5
+pedestal = 0.0
+electronic_noise_sigma = 0.0
+
+# Optional channel-specific calibration overrides:
+# [channels.FPGA0_ADCA]
+# gain = 2.5
+# pedestal = 12.0
+# electronic_noise_sigma = 1.8
+
+[filter]
+enabled = false
+mode = "both"  # "both" or "either"
+threshold = 10
+
+
+[histogram]
+ref_fraction = 0.75  # fraction of matched U/D pairs in the reference histogram; the rest go to the test histogram
+seed = 1729          # random assignment of pairs to reference/test
+bins = 200
+min = 0.0
+max = 32767.0        # histogram range of sqrt((U-PU)(D-PD)); fixed so ref and test share bins
+# A PMT pair is a U row and a D row with the same _time and the same ADC letter,
+# on FPGAs at the same position in these lists (D[i] <-> U[i]).
+d_fpgas = [0, 1]
+u_fpgas = [2, 3]
+
+[classifier]
+muon_isotope = "cosmic-muons"  # isotope label of the muon template, always included in the fit
+pseudocount = 0.5              # alpha added to every reference bin before normalizing
+detection_threshold = 25.0     # 2*(NLL_muon_only - NLL_best) at or below this -> "muon-only"; to be calibrated on muon-only windows
+window_size = 2000 # accepted measurements (pairs) per evaluation window
+windows_per_class = 432 # windows per truth class and kind (pure, mixed)
+mixed_fraction = 0.2           # isotope share of the measurements in a mixed window
+seed = 1729                    # window construction
+
+# Files processed by scripts/initialize.py; the isotope label is not used yet.
+
+[[sources]]
+path = "~/x17-detector-study/data/simulations/0=cosmic-muons-2026.10.13-seed1733.root"
+isotope = "cosmic-muons"
+
+[[sources]]
+path = "~/x17-detector-study/data/simulations/308=Bi-207-2026.10.13-seed1731.root"
+isotope = "Bi-207"
+
+[[sources]]
+path = "~/x17-detector-study/data/simulations/312=Cs-137-2026.10.13-seed1729.root"
+isotope = "Cs-137"
+
+[[sources]]
+path = "~/x17-detector-study/data/simulations/319=Co-60-2026.10.13-seed1730.root"
+isotope = "Co-60"
+
+[[sources]]
+path = "~/x17-detector-study/data/simulations/332=Na-22-2026.10.13-seed1732.root"
+isotope = "Na-22"
