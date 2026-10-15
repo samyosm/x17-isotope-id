@@ -30,7 +30,7 @@ ref_fraction = 0.75  # fraction of matched U/D pairs in the reference histogram;
 seed = 1729          # random assignment of pairs to reference/test
 bins = 200
 min = 0.0
-max = 32767.0        # histogram range of sqrt((U-PU)(D-PD)); fixed so ref and test share bins
+max = 1200.0        # histogram range of sqrt((U-PU)(D-PD)); fixed so ref and test share bins
 # A PMT pair is a U row and a D row with the same _time and the same ADC letter,
 # on FPGAs at the same position in these lists (D[i] <-> U[i]).
 d_fpgas = [0, 1]
@@ -38,10 +38,10 @@ u_fpgas = [2, 3]
 
 [classifier]
 muon_isotope = "cosmic-muons"  # isotope label of the muon template, always included in the fit
-pseudocount = 0.5              # alpha added to every reference bin before normalizing
-detection_threshold = 25.0     # 2*(NLL_muon_only - NLL_best) at or below this -> "muon-only"; to be calibrated on muon-only windows
+pseudocount = 1e-3              # alpha added to every reference bin before normalizing
+detection_threshold = 5.0     # 2*(NLL_muon_only - NLL_best) at or below this -> "muon-only"; to be calibrated on muon-only windows
 window_size = 2000 # accepted measurements (pairs) per evaluation window
-windows_per_class = 432 # windows per truth class and kind (pure, mixed)
+windows_per_class = 100 # windows per truth class and kind (pure, mixed)
 mixed_fraction = 0.2           # isotope share of the measurements in a mixed window
 seed = 1729                    # window construction
 
