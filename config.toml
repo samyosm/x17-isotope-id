@@ -41,14 +41,14 @@ muon_isotope = "cosmic-muons"  # isotope label of the muon template, always incl
 pseudocount = 1e-3              # alpha added to every reference bin before normalizing
 detection_threshold = 5.0     # 2*(NLL_muon_only - NLL_best) at or below this -> "muon-only"; to be calibrated on muon-only windows
 window_size = 2000 # accepted measurements (pairs) per evaluation window
-windows_per_class = 100 # windows per truth class and kind (pure, mixed)
+windows_per_class = 200 # windows per truth class and kind (pure, mixed)
 mixed_fraction = 0.2           # isotope share of the measurements in a mixed window
 seed = 1729                    # window construction
 
 # Files processed by scripts/initialize.py; the isotope label is not used yet.
 
 [[sources]]
-path = "~/x17-detector-study/data/simulations/0=cosmic-muons-2026.10.13-seed1733.root"
+path = "~/x17-detector-study/data/simulations/0=cosmic-muons-2026.10.15-seed1729.root"
 isotope = "cosmic-muons"
 
 [[sources]]
