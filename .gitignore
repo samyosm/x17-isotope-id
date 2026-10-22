@@ -1,3 +1,4 @@
+report/
 # Python
 __pycache__/
 *.py[cod]
@@ -30,3 +31,8 @@ data/*
 *.swp
 .DS_Store
 Thumbs.db
+
+# LaTeX
+report/*.aux
+report/*.log
+report/*.out
