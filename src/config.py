@@ -16,6 +16,7 @@ def load_config(path=DEFAULT_PATH):
     config.setdefault("digitization", {})
     config.setdefault("channels", {})
     config.setdefault("filter", {})
+    config.setdefault("calibration", {})
     config.setdefault("histogram", {})
     config.setdefault("classifier", {})
     config.setdefault("sources", [])
@@ -28,6 +29,15 @@ def load_config(path=DEFAULT_PATH):
     config["filter"].setdefault("enabled", False)
     config["filter"].setdefault("mode", "both")
     config["filter"].setdefault("threshold", 0)
+
+    config["calibration"].setdefault("gamma", {})
+    config["calibration"]["gamma"] = {str(k): v for k, v in config["calibration"]["gamma"].items()}
+    # Template units per real ADC. Pedestals, noise and the threshold are given in real ADC and
+    # converted for the simulation, whose spectra are in template units.
+    config["calibration"]["sim_per_adc"] = sim_per_adc(config["calibration"])
+    config["filter"]["simulation_threshold"] = (
+        float(config["filter"]["threshold"]) * config["calibration"]["sim_per_adc"]
+    )
 
     config["histogram"].setdefault("ref_fraction", 0.75)
     config["histogram"].setdefault("seed", 1729)
@@ -55,6 +65,20 @@ def load_config(path=DEFAULT_PATH):
 
     validate(config)
     return config
+
+
+def sim_per_adc(calibration):
+    """Template units per real ADC: the mean gamma (keV/ADC) over kev_per_template_unit.
+
+    1 when there is no calibration. E[keV] = gamma * sqrt((U - PU) * (D - PD)) per scintillator
+    (the summer 2026 technical note), and one template unit is kev_per_template_unit keV.
+    """
+    if "kev_per_template_unit" not in calibration:
+        return 1.0
+    gammas = list(calibration["gamma"].values())
+    if not gammas:
+        raise ValueError("calibration.kev_per_template_unit needs calibration.gamma values")
+    return float(np.mean(gammas)) / float(calibration["kev_per_template_unit"])
 
 
 def resolve(path, base=ROOT):
@@ -94,6 +118,12 @@ def validate(config):
     for source in config["sources"]:
         if "isotope" not in source or not source["stem"]:
             raise ValueError("Each [[sources]] entry needs 'isotope' and 'path' (or 'name')")
+    calibration = config["calibration"]
+    if "kev_per_template_unit" in calibration and not calibration["kev_per_template_unit"] > 0:
+        raise ValueError("calibration.kev_per_template_unit must be positive")
+    for scintillator, gamma in calibration["gamma"].items():
+        if not (np.isfinite(gamma) and gamma > 0):
+            raise ValueError(f"calibration.gamma[{scintillator}] must be positive")
     stems = [source["stem"] for source in config["sources"]]
     if len(set(stems)) != len(stems):
         raise ValueError("Source files must have distinct filenames")
@@ -103,8 +133,9 @@ def channel_parameters(config, channel):
     params = config["defaults"] | config["channels"].get(channel, {})
     gain = float(params["gain"])
     spe_sigma = float(params["spe_relative_sigma"])
-    pedestal = float(params["pedestal"])
-    noise_sigma = float(params["electronic_noise_sigma"])
+    factor = config["calibration"]["sim_per_adc"]  # given in real ADC, simulated in template units
+    pedestal = float(params["pedestal"]) * factor
+    noise_sigma = float(params["electronic_noise_sigma"]) * factor
     if not all(np.isfinite(v) for v in (gain, spe_sigma, pedestal, noise_sigma)):
         raise ValueError(f"Nonfinite parameters for channel {channel}")
     if gain < 0 or spe_sigma < 0 or noise_sigma < 0:

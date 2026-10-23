@@ -71,6 +71,20 @@ class Identifier:
         self.raw_start = RAW_START
         self.raw_bins = RAW_BINS
 
+    def scale(self, group=None):
+        """Factor from the stored sqrt(U * D) to the template axis: gamma / kev_per_template_unit.
+
+        gamma is the keV per ADC of the scintillator `group` (config calibration.gamma; the
+        mean over scintillators for an unknown one). 1 without calibration.
+        """
+        calibration = self.config["calibration"]
+        if "kev_per_template_unit" not in calibration:
+            return 1.0
+        gamma = calibration["gamma"].get(str(group))
+        if gamma is None:
+            gamma = float(np.mean(list(calibration["gamma"].values())))
+        return gamma / calibration["kev_per_template_unit"]
+
     def pedestal(self, field):
         params = config_defaults(self.config) | self.config["channels"].get(field, {})
         return float(params.get("pedestal", 0.0))
@@ -95,16 +109,18 @@ class Identifier:
         slot = np.zeros(len(end), dtype=np.int64)
         return match_pairs(times[used], end, slot, adc[used])
 
-    def pair_values(self, times, fields, adc, d_field, u_field):
-        """sqrt((U - PU) * (D - PD)) of the accepted pairs of one scintillator.
+    def pair_values(self, times, fields, adc, d_field, u_field, group=None):
+        """gamma / kev_per_template_unit * sqrt((U - PU) * (D - PD)) of the accepted pairs.
 
-        Returns (values, matched): the values and the number of pairs before the threshold.
+        The pairs are those of one scintillator (`group`, for its gamma); the values are on the
+        template axis. Returns (values, matched): the values and the number of pairs before the
+        threshold.
         """
         u_raw, d_raw = self.matched_pairs(times, fields, adc, d_field, u_field)
         keep = self.accepted(d_raw, u_raw)
         u_charge = u_raw[keep] - self.pedestal(u_field)
         d_charge = d_raw[keep] - self.pedestal(d_field)
-        return pair_variable(u_charge, d_charge), len(u_raw)
+        return pair_variable(u_charge, d_charge) * self.scale(group), len(u_raw)
 
     def bin_layout(self):
         """(low, high, bins) of the uniform histogram bins; the database bins on the same layout."""
@@ -166,18 +182,21 @@ class Identifier:
             raise ValueError("times, fields and adc must have the same length")
         histograms = {}
         for name, (d_field, u_field) in groups.items():
-            values, _ = self.pair_values(times, fields, adc, d_field, u_field)
+            values, _ = self.pair_values(times, fields, adc, d_field, u_field, name)
             histograms[name] = (np.histogram(values, bins=self.edges)[0], len(values))
         return self.identify_histograms(histograms, min_pairs)
 
-    def diagnose_histogram(self, counts, pair_summary, d, u, matched, below, above, zero, raw=None):
+    def diagnose_histogram(
+        self, counts, pair_summary, d, u, matched, below, above, zero, raw=None, group=None
+    ):
         """Why a scintillator is classified as it is: data scale against the templates.
 
         counts: accepted pairs per template bin; pair_summary: summary() of the accepted
         sqrt((U - PU) * (D - PD)) values; d / u: summary() of the raw readings of each channel;
         matched: pairs of equal time before the acquisition threshold; below / above / zero:
         pairs under the histogram range, over it, and exactly 0 after clipping negatives;
-        raw: optional histogram of the raw readings (see RAW_START and RAW_BINS).
+        raw: optional histogram of the raw readings (see RAW_START and RAW_BINS); group: the
+        scintillator, for its calibration.
 
         Returns a dict with d, u, pairs, matched, filter (the threshold settings), unpaired
         (readings without a partner of equal time), values (= pair_summary), below, above, zero,
@@ -227,15 +246,20 @@ class Identifier:
             "template_median": template_median,
             "scale": median / template_median if median and template_median > 0 else None,
             "raw": raw,
+            "calibration": {
+                "kev_per_unit": self.config["calibration"].get("kev_per_template_unit"),
+                "gamma": self.config["calibration"]["gamma"].get(str(group)),
+                "factor": self.scale(group),
+            },
         }
 
-    def diagnose(self, times, fields, adc, d_field, u_field):
+    def diagnose(self, times, fields, adc, d_field, u_field, group=None):
         """diagnose_histogram from raw readings."""
         times = np.asarray(times)
         fields = np.asarray(fields)
         adc = np.asarray(adc, dtype=np.float64)
         d_adc, u_adc = adc[fields == d_field], adc[fields == u_field]
-        values, matched = self.pair_values(times, fields, adc, d_field, u_field)
+        values, matched = self.pair_values(times, fields, adc, d_field, u_field, group)
         edges = np.asarray(self.edges)
         raw_edges = RAW_START + np.arange(RAW_BINS + 1)
         return self.diagnose_histogram(
@@ -252,4 +276,5 @@ class Identifier:
                 "d": np.histogram(d_adc, bins=raw_edges)[0].tolist(),
                 "u": np.histogram(u_adc, bins=raw_edges)[0].tolist(),
             },
+            group,
         )

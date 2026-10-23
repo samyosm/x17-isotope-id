@@ -46,7 +46,7 @@ def acquisition_mask(times, adc, filter_config):
     if len(adc) % 2 or np.any(times[::2] != times[1::2]):
         raise ValueError("Filter requires adjacent pairs with matching timestamps")
 
-    threshold = float(filter_config["threshold"])
+    threshold = float(filter_config.get("simulation_threshold", filter_config["threshold"]))
     left = adc[::2] >= threshold
     right = adc[1::2] >= threshold
     accepted = left & right if filter_config["mode"] == "both" else left | right

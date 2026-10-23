@@ -5,6 +5,13 @@
 #   [measured] read from the detector data with the Inspect page of the registry website
 #              (scintillator 0, 30 minutes of run data, 2026-10-23); NOT in the report
 #   [choice]   our own setting, with the reason given
+#   [estimate] a value that could not be taken from a source and must be checked on real data
+#
+# Two units are used. Pedestals, noise and the threshold are in REAL ADC (what the detector stores);
+# the simulation and the template spectra are in TEMPLATE UNITS, one unit being
+# calibration.kev_per_template_unit keV. The real values are converted for the simulation
+# automatically, and the real data is converted to the template axis with the per-scintillator
+# gamma (keV/ADC) of [calibration.gamma].
 # After changing digitization, filter or histogram values, regenerate the templates
 # (scripts/initialize.py) and re-calibrate classifier.detection_threshold (src/main.py --evaluate).
 
@@ -18,12 +25,11 @@ seed = 1729
 adc_max = 32767
 
 [defaults]
-gain = 1.0                     # [choice] unverified: the report gives keV/ADC (gamma = 18.7-24.0, its Table 5),
-                               # not ADC per photoelectron. The real muon peak is ~735-800 ADC (report, Sec. 2.4
-                               # and Fig. 15); check with the ratio on the Inspect page once the filter is on.
+gain = 1.0                     # simulation only: template units per photoelectron (the unit itself is
+                               # fixed by calibration.kev_per_template_unit, not by this)
 spe_relative_sigma = 0.5
-pedestal = 4.0                 # [measured] mean of the D0 (3) and U0 (5) baselines; other channels not yet measured
-electronic_noise_sigma = 2.5   # [measured] mean of the D0 (1.9) and U0 (3.4) baseline spreads
+pedestal = 4.0                 # real ADC, [measured] mean of the D0 (3) and U0 (5) baselines; others not yet measured
+electronic_noise_sigma = 2.5   # real ADC, [measured] mean of the D0 (1.9) and U0 (3.4) baseline spreads
 
 # Channel-specific calibration overrides.
 [channels.FPGA0_ADCA]          # D0, [measured]
@@ -38,16 +44,47 @@ electronic_noise_sigma = 3.4
 [filter]
 enabled = true  # [report] Sec. 4.2: radioisotope data is cleaned with a hard cut on both PMTs
 mode = "both"   # [report] "U, D > 20 ADC"; "both" or "either"
-threshold = 20  # [report] Sec. 4.2 (a higher value would cut the Cs-137 and Bi-207 Compton edges, ~18-50 ADC)
+threshold = 20  # real ADC, [report] Sec. 4.2. Converted to template units for the simulation. The Inspect page
+                # shows how many pairs survive at other thresholds.
+
+# Energy calibration of the real detector: E[keV] = gamma * sqrt((U - PU) * (D - PD)) (report, Eq. 3).
+[calibration]
+kev_per_template_unit = 36.0   # [estimate] keV per unit of the template axis. Muon peak ~18 MeV (report Fig. 15:
+                               # 18.37 MeV simulated; 735 ADC x 23.96 keV/ADC = 17.6 MeV measured, bar 6) divided
+                               # by a muon template peak of ~500 units (template median 563 seen on the Inspect
+                               # page; the peak lies below the median). After regenerating the templates, the
+                               # Inspect page of a muon-only scintillator suggests the exact value.
+
+# keV per ADC of each scintillator, [report] Table 5 ("Final calibration parameters"). The report's
+# bar numbers are assumed to be the scintillator numbers of the website (D<n> + U<n>).
+[calibration.gamma]
+0 = 22.78
+1 = 22.90
+2 = 23.76
+3 = 20.51
+4 = 20.82
+5 = 20.58
+6 = 23.96
+7 = 22.52
+8 = 23.53
+9 = 22.87
+10 = 22.72
+11 = 20.04
+12 = 21.10
+13 = 18.67
+14 = 20.58
+15 = 23.02
 
 
 [histogram]
 ref_fraction = 0.75  # fraction of matched U/D pairs in the reference histogram; the rest go to the test histogram
 seed = 1729          # random assignment of pairs to reference/test
-bins = 500          # [choice] 3 ADC per bin: the Cs-137, Bi-207 and Na-22 Compton edges lie at only ~18-50 ADC
+# Histogram range of gamma/K * sqrt((U-PU)(D-PD)), in template units (1 unit ~ 36 keV); fixed so ref and test share bins.
+bins = 900          # [choice] 1 unit (~36 keV) per bin: the Cs-137, Bi-207, Na-22 and Co-60 Compton edges
+                    # (0.34-1.1 MeV) lie within ~10-30 units, so wider bins would blur them
 min = 0.0
-max = 1500.0        # [report] muon spectra of sqrt(UD) span 200-1500 ADC (Figs. 15-16); fixed so ref and test share bins
-                    # histogram range of sqrt((U-PU)(D-PD))
+max = 900.0         # [report] muon spectra of sqrt(UD) span 200-1500 ADC (Figs. 15-16); 1500 ADC x mean gamma 21.9 keV/ADC
+                    # / 36 keV per unit ~ 900 units
 # A PMT pair is a U row and a D row with the same _time and the same ADC letter,
 # on FPGAs at the same position in these lists (D[i] <-> U[i]).
 d_fpgas = [0, 1]
