@@ -32,6 +32,24 @@ def finite_or_none(value):
     return None if value is None or not math.isfinite(value) else float(value)
 
 
+def summary(values):
+    """Count and percentiles of a 1-d array (None entries when empty)."""
+    values = np.asarray(values, dtype=np.float64)
+    if len(values) == 0:
+        return {"n": 0, "min": None, "p1": None, "p50": None, "p99": None, "max": None,
+                "negative": None}
+    p1, p50, p99 = np.percentile(values, [1, 50, 99])
+    return {
+        "n": int(len(values)),
+        "min": float(values.min()),
+        "p1": float(p1),
+        "p50": float(p50),
+        "p99": float(p99),
+        "max": float(values.max()),
+        "negative": int(np.count_nonzero(values < 0)),
+    }
+
+
 class Identifier:
     def __init__(self, config):
         self.config = config
@@ -98,3 +116,56 @@ class Identifier:
                 }
             results.append(row)
         return results
+
+    def diagnose(self, times, fields, adc, d_field, u_field):
+        """Why a scintillator is classified as it is: data scale against the templates.
+
+        Returns a dict with: d / u (summary of the raw readings of each channel), pairs
+        (number of matched U/D pairs), unpaired (readings without a partner of equal time),
+        values (summary of sqrt(U * D)), below / above / zero (pairs under the histogram range,
+        over it, and exactly 0 after clipping negatives), edges, observed (counts per bin),
+        muon (the muon template scaled to the observed in-range total), fit (the best isotope
+        and its fitted fraction, with the fitted expected counts), template_median (median of
+        the muon template) and scale (observed median / template median: the factor by which
+        the data is larger than the templates if the data is muons only).
+        """
+        times = np.asarray(times)
+        fields = np.asarray(fields)
+        adc = np.asarray(adc, dtype=np.float64)
+        d_adc, u_adc = adc[fields == d_field], adc[fields == u_field]
+        values = self.pair_values(times, fields, adc, d_field, u_field)
+        counts = np.histogram(values, bins=self.edges)[0]
+        total = float(counts.sum())
+
+        muon = self.templates[self.muon_isotope]
+        cumulative = np.concatenate([[0.0], np.cumsum(muon)])
+        template_median = float(np.interp(0.5, cumulative, self.edges))
+        median = float(np.median(values)) if len(values) else None
+
+        fit = None
+        if total > 0:
+            result = classify(counts, self.templates, self.muon_isotope, self.threshold)
+            template = self.templates[result["best"]]
+            fraction = result["fraction"]
+            fit = {
+                "isotope": result["best"],
+                "fraction": float(fraction),
+                "delta": finite_or_none(result["delta"]),
+                "expected": (total * ((1 - fraction) * muon + fraction * template)).tolist(),
+            }
+        return {
+            "d": summary(d_adc),
+            "u": summary(u_adc),
+            "pairs": int(len(values)),
+            "unpaired": int(len(d_adc) + len(u_adc) - 2 * len(values)),
+            "values": summary(values),
+            "below": int(np.count_nonzero(values < self.edges[0])),
+            "above": int(np.count_nonzero(values > self.edges[-1])),
+            "zero": int(np.count_nonzero(values == 0)),
+            "edges": self.edges.tolist(),
+            "observed": counts.tolist(),
+            "muon": (total * muon).tolist(),
+            "fit": fit,
+            "template_median": template_median,
+            "scale": median / template_median if median and template_median > 0 else None,
+        }
