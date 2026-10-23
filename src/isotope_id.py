@@ -25,6 +25,7 @@ import math
 import numpy as np
 
 from config import load_config
+from excess import ExcessAnalyzer
 from main import classify, load_templates
 from pairing import D_END, U_END, match_pairs, pair_variable
 
@@ -62,7 +63,13 @@ def config_defaults(config):
 class Identifier:
     def __init__(self, config):
         self.config = config
-        self.templates, self.edges = load_templates(config)
+        # The spectrum templates of the older method are optional: the excess identification does not need them.
+        try:
+            self.templates, self.edges = load_templates(config)
+            self.templates_error = None
+        except (OSError, ValueError, KeyError) as error:
+            self.templates, self.edges, self.templates_error = None, None, str(error)
+        self.excess = ExcessAnalyzer.from_config(config)
         clf = config["classifier"]
         self.muon_isotope = clf["muon_isotope"]
         self.threshold = clf["detection_threshold"]
@@ -122,8 +129,13 @@ class Identifier:
         d_charge = d_raw[keep] - self.pedestal(d_field)
         return pair_variable(u_charge, d_charge) * self.scale(group), len(u_raw)
 
+    def _require_templates(self):
+        if self.templates is None:
+            raise ValueError(f"The spectrum templates could not be loaded: {self.templates_error}")
+
     def bin_layout(self):
         """(low, high, bins) of the uniform histogram bins; the database bins on the same layout."""
+        self._require_templates()
         edges = np.asarray(self.edges, dtype=np.float64)
         widths = np.diff(edges)
         if not np.allclose(widths, widths[0]):
@@ -140,6 +152,7 @@ class Identifier:
         than min_pairs pairs are in range; default self.min_pairs), best, fraction, delta,
         margin and nll (see main.classify; None when label is None).
         """
+        self._require_templates()
         min_pairs = self.min_pairs if min_pairs is None else min_pairs
         results = []
         for name, (counts, pairs) in histograms.items():
@@ -206,6 +219,7 @@ class Identifier:
         template median: the factor by which the data is larger than the templates if the data
         is muons only) and raw.
         """
+        self._require_templates()
         counts = np.asarray(counts, dtype=np.float64)
         total = float(counts.sum())
         muon = self.templates[self.muon_isotope]

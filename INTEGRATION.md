@@ -47,3 +47,9 @@ The model then returns a probability for each of Cs-137, Co-60, Bi-207, Na-22 an
 3. Compare the answer with the known source.
 
 Repeat for every source and several bars. Report every mismatch. Do not change the simulation to make the results look better.
+
+## Excess identification (current method)
+
+`ExcessAnalyzer` (`src/excess.py`) compares a window with a reference period. Per scintillator it takes the histogram of `sqrt((U-PU)(D-PD))` for pairs with both PMTs at least `[excess] threshold` ADC; the registry counts these in ClickHouse. The excess is the window minus the reference scaled by the number of triggers. For each source (`templates/excess_templates.json`, from the simulation through the measured detector response, see `src/response.py`) and each candidate bar, the expected excess has a free amplitude per distance class, constrained to not grow with distance; the background of each bin is profiled out using both counts (on/off likelihood). `TS` is 2 ln of the likelihood gain over no source. `detection_ts` (30) is set above the largest `TS` of source-free windows tested (about 18); the source is named only when it leads the next by `margin_ts`.
+
+Validated on the 21 October runs: Cs-137 identified next to bar 4; Bi-207 detected but not named; Th-228 and Co-60 not seen; no false detections in 0.5 to 4 h windows without a source. Th is not simulated, Co-60 and Na-22 are too weak to be seen today.

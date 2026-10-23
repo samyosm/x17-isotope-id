@@ -123,3 +123,118 @@ isotope = "Co-60"
 [[sources]]
 path = "~/x17-detector-study/data/simulations/332=Na-22-2026.10.13-seed1732.root"
 isotope = "Na-22"
+
+
+# ----------------------------------------------------------------------------------------------
+# Identification by EXCESS over a reference period (what the registry website uses).
+#
+# Under the present acquisition the trigger is not driven by the sources (a random trigger, 12 to 19
+# Hz), so a source shows as a small excess of pairs in a few percent of events, on top of the noise
+# and the background. The registry counts, for the chosen window and for a reference period, the
+# events and the pairs (D and U of a bar, both at or above `threshold` ADC) in a histogram of
+# sqrt((U-PU)(D-PD)); the excess is the window minus the reference scaled by the number of events.
+# Source shapes come from the simulation's truth (deposited energy, position) through the response
+# model of [response] and the real noise: scripts/build_excess_templates.py writes `templates`.
+# See x17-data-analysis (FINDINGS.md, SIMULATION.md) for how each value was obtained.
+[excess]
+threshold = 8            # real ADC: both PMTs of a pair at or above this. [choice] Real noise pairs are
+                         # numerous at 8 but are subtracted with the reference; a 20 ADC cut keeps 14 % of
+                         # the Cs-137 signal, 8 to 12 keeps most of it (21 October runs).
+bins = 60                # [choice] 2 ADC per bin ...
+max = 120.0              # ... up to 120 ADC; the Cs-137, Bi-207 and Co-60 spectra end below 60 ADC
+templates = "templates/excess_templates.json"
+detection_ts = 30.0      # source declared present above this test statistic (2 ln likelihood ratio); [estimate]
+                         # calibrated on source-free windows by x17-data-analysis/scripts/16_validate_excess.py
+margin_ts = 9.0          # an isotope is named only if it beats the next one by this much (about 3 sigma)
+min_events = 500         # fewer events in the window or the reference: no answer
+min_plausible_activity_bq = 1000   # a source weaker than this today cannot show in minutes to hours: it is flagged
+bad_channels = ["FPGA2_ADCG", "FPGA2_ADCH", "FPGA2_ADCF"]   # [measured] U10 and U9 very noisy, U11 dead: bars 9, 10, 11 are not used
+
+# Activities today (Bq) of the simulated sources, from the simulation configuration (14 October 2026).
+# Th-228 is not simulated, so it has no shape and cannot be named.
+[excess.activity_bq]
+"Cs-137" = 1065237.0
+"Bi-207" = 128287.5
+"Co-60" = 121.8
+"Na-22" = 8.8
+
+# Pedestal of each PMT channel (real ADC), [measured] medians of the 22-23 October 24-hour slice.
+[excess.pedestals]
+FPGA0_ADCA = 2.0   # D0
+FPGA0_ADCB = 4.0   # D15
+FPGA0_ADCC = 3.0   # D14
+FPGA0_ADCD = 4.0   # D13
+FPGA0_ADCE = 6.0   # D12
+FPGA0_ADCF = 3.0   # D11
+FPGA0_ADCG = 5.0   # D10
+FPGA0_ADCH = 2.0   # D9
+FPGA1_ADCA = 5.0   # D8
+FPGA1_ADCB = 3.0   # D7
+FPGA1_ADCC = 4.0   # D6
+FPGA1_ADCD = 5.0   # D5
+FPGA1_ADCE = 6.0   # D4
+FPGA1_ADCF = 4.0   # D3
+FPGA1_ADCG = 3.0   # D2
+FPGA1_ADCH = 4.0   # D1
+FPGA2_ADCA = 5.0   # U0
+FPGA2_ADCB = 4.0   # U15
+FPGA2_ADCC = 6.0   # U14
+FPGA2_ADCD = 2.0   # U13
+FPGA2_ADCE = 3.0   # U12
+FPGA2_ADCF = 2.0   # U11
+FPGA2_ADCG = 12.0   # U10
+FPGA2_ADCH = 8.0   # U9
+FPGA3_ADCA = 4.0   # U8
+FPGA3_ADCB = 4.0   # U7
+FPGA3_ADCC = 6.0   # U6
+FPGA3_ADCD = 4.0   # U5
+FPGA3_ADCE = 2.0   # U4
+FPGA3_ADCF = 3.0   # U3
+FPGA3_ADCG = 4.0   # U2
+FPGA3_ADCH = 4.0   # U1
+
+# The detector response applied to the simulation's truth, to build the source shapes.
+[response]
+n0 = 30.6                # photoelectrons per MeV per PMT at z = 0; the simulation's own yield
+spe_relative_sigma = 0.5 # single-photoelectron spread
+kernel = "mix:0.2:6"     # [fitted] recorded fraction of a pulse (x17-data-analysis/scripts/kernel.py): 20 % of
+                         # pulses at full amplitude, the rest log-uniform down to exp(-6). Fitted to the muon
+                         # hits of 22-23 October; empirical, not explained.
+adc_scale = 0.7          # [fitted] extra amplitude factor at low energy (21 October Cs-137 run)
+
+# U/D gain ratio at z = 0 and attenuation length (cm) of each bar, [report] Tables 5 and 3.
+[response.alpha0]
+0 = 1.168
+1 = 1.008
+2 = 1.091
+3 = 0.838
+4 = 1.006
+5 = 0.994
+6 = 0.897
+7 = 1.086
+8 = 0.888
+9 = 1.1
+10 = 1.045
+11 = 0.959
+12 = 1.023
+13 = 0.981
+14 = 1.142
+15 = 1.133
+
+[response.lambda_cm]
+0 = 257.2
+1 = 320.07
+2 = 248.75
+3 = 521.14
+4 = 271.82
+5 = 298.45
+6 = 675.18
+7 = 280.06
+8 = 270.67
+9 = 295.04
+10 = 328.42
+11 = 304.95
+12 = 266.84
+13 = 335.55
+14 = 319.23
+15 = 316.99

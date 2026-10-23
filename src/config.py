@@ -57,6 +57,7 @@ def load_config(path=DEFAULT_PATH):
     clf.setdefault("seed", 1729)
 
     base = Path(path).resolve().parent
+    config["base_dir"] = base
     config["io"]["output_dir"] = resolve(config["io"]["output_dir"], base)
     for source in config["sources"]:
         if "path" in source:
