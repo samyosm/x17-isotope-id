@@ -29,6 +29,8 @@ from main import classify, load_templates
 from pairing import D_END, U_END, match_pairs, pair_variable
 
 MIN_PAIRS = 100
+RAW_START = -10  # raw readings are histogrammed from here, in bins of 1 ADC,
+RAW_BINS = 120   # to show where the baseline noise ends
 
 
 def finite_or_none(value):
@@ -66,6 +68,8 @@ class Identifier:
         self.threshold = clf["detection_threshold"]
         self.min_pairs = MIN_PAIRS
         self.filter = config["filter"]
+        self.raw_start = RAW_START
+        self.raw_bins = RAW_BINS
 
     def pedestal(self, field):
         params = config_defaults(self.config) | self.config["channels"].get(field, {})
@@ -102,30 +106,31 @@ class Identifier:
         d_charge = d_raw[keep] - self.pedestal(d_field)
         return pair_variable(u_charge, d_charge), len(u_raw)
 
-    def identify(self, times, fields, adc, groups, min_pairs=None):
+    def bin_layout(self):
+        """(low, high, bins) of the uniform histogram bins; the database bins on the same layout."""
+        edges = np.asarray(self.edges, dtype=np.float64)
+        widths = np.diff(edges)
+        if not np.allclose(widths, widths[0]):
+            raise ValueError("The templates must use uniform bins to be binned in the database")
+        return float(edges[0]), float(edges[-1]), len(edges) - 1
+
+    def identify_histograms(self, histograms, min_pairs=None):
         """Classify one histogram per group.
 
-        times, fields, adc: equally long arrays (integer times, channel names, ADC values).
-        groups: {group name: (D-end channel, U-end channel)}.
-        Returns a list, in the order of groups, of dicts with: group, pairs (accepted U/D
-        pairs), in_range (pairs inside the histogram range), label (isotope, "muon-only", or
-        None when fewer than min_pairs pairs are in range; default self.min_pairs), best,
-        fraction, delta, margin and nll (see main.classify; None when label is None).
+        histograms: {group name: (counts per template bin, accepted pairs)}; the pairs also
+        count those outside the histogram range.
+        Returns a list, in the order of histograms, of dicts with: group, pairs, in_range
+        (pairs inside the histogram range), label (isotope, "muon-only", or None when fewer
+        than min_pairs pairs are in range; default self.min_pairs), best, fraction, delta,
+        margin and nll (see main.classify; None when label is None).
         """
         min_pairs = self.min_pairs if min_pairs is None else min_pairs
-        times = np.asarray(times)
-        fields = np.asarray(fields)
-        adc = np.asarray(adc, dtype=np.float64)
-        if not len(times) == len(fields) == len(adc):
-            raise ValueError("times, fields and adc must have the same length")
-
         results = []
-        for name, (d_field, u_field) in groups.items():
-            values, _ = self.pair_values(times, fields, adc, d_field, u_field)
-            counts = np.histogram(values, bins=self.edges)[0]
+        for name, (counts, pairs) in histograms.items():
+            counts = np.asarray(counts, dtype=np.float64)
             row = {
                 "group": name,
-                "pairs": int(len(values)),
+                "pairs": int(pairs),
                 "in_range": int(counts.sum()),
                 "label": None,
                 "best": None,
@@ -147,31 +152,47 @@ class Identifier:
             results.append(row)
         return results
 
-    def diagnose(self, times, fields, adc, d_field, u_field):
-        """Why a scintillator is classified as it is: data scale against the templates.
+    def identify(self, times, fields, adc, groups, min_pairs=None):
+        """Classify one histogram per group from raw readings.
 
-        Returns a dict with: d / u (summary of the raw readings of each channel), pairs
-        (accepted U/D pairs), matched (pairs of equal time before the acquisition threshold),
-        filter (the threshold settings), unpaired (readings without a partner of equal time),
-        values (summary of sqrt(U * D)), below / above / zero (pairs under the histogram range,
-        over it, and exactly 0 after clipping negatives), edges, observed (counts per bin),
-        muon (the muon template scaled to the observed in-range total), fit (the best isotope
-        and its fitted fraction, with the fitted expected counts), template_median (median of
-        the muon template) and scale (observed median / template median: the factor by which
-        the data is larger than the templates if the data is muons only).
+        times, fields, adc: equally long arrays (integer times, channel names, ADC values).
+        groups: {group name: (D-end channel, U-end channel)}.
+        Returns what identify_histograms returns.
         """
         times = np.asarray(times)
         fields = np.asarray(fields)
         adc = np.asarray(adc, dtype=np.float64)
-        d_adc, u_adc = adc[fields == d_field], adc[fields == u_field]
-        values, matched = self.pair_values(times, fields, adc, d_field, u_field)
-        counts = np.histogram(values, bins=self.edges)[0]
-        total = float(counts.sum())
+        if not len(times) == len(fields) == len(adc):
+            raise ValueError("times, fields and adc must have the same length")
+        histograms = {}
+        for name, (d_field, u_field) in groups.items():
+            values, _ = self.pair_values(times, fields, adc, d_field, u_field)
+            histograms[name] = (np.histogram(values, bins=self.edges)[0], len(values))
+        return self.identify_histograms(histograms, min_pairs)
 
+    def diagnose_histogram(self, counts, pair_summary, d, u, matched, below, above, zero, raw=None):
+        """Why a scintillator is classified as it is: data scale against the templates.
+
+        counts: accepted pairs per template bin; pair_summary: summary() of the accepted
+        sqrt((U - PU) * (D - PD)) values; d / u: summary() of the raw readings of each channel;
+        matched: pairs of equal time before the acquisition threshold; below / above / zero:
+        pairs under the histogram range, over it, and exactly 0 after clipping negatives;
+        raw: optional histogram of the raw readings (see RAW_START and RAW_BINS).
+
+        Returns a dict with d, u, pairs, matched, filter (the threshold settings), unpaired
+        (readings without a partner of equal time), values (= pair_summary), below, above, zero,
+        edges, observed (counts per bin), muon (the muon template scaled to the observed
+        in-range total), fit (the best isotope and its fitted fraction, with the fitted expected
+        counts), template_median (median of the muon template), scale (observed median /
+        template median: the factor by which the data is larger than the templates if the data
+        is muons only) and raw.
+        """
+        counts = np.asarray(counts, dtype=np.float64)
+        total = float(counts.sum())
         muon = self.templates[self.muon_isotope]
         cumulative = np.concatenate([[0.0], np.cumsum(muon)])
         template_median = float(np.interp(0.5, cumulative, self.edges))
-        median = float(np.median(values)) if len(values) else None
+        median = pair_summary["p50"]
 
         fit = None
         if total > 0:
@@ -185,24 +206,50 @@ class Identifier:
                 "expected": (total * ((1 - fraction) * muon + fraction * template)).tolist(),
             }
         return {
-            "d": summary(d_adc),
-            "u": summary(u_adc),
-            "pairs": int(len(values)),
+            "d": d,
+            "u": u,
+            "pairs": int(pair_summary["n"]),
             "matched": int(matched),
-            "unpaired": int(len(d_adc) + len(u_adc) - 2 * matched),
+            "unpaired": int(d["n"] + u["n"] - 2 * matched),
             "filter": {
                 "enabled": bool(self.filter["enabled"]),
                 "mode": self.filter["mode"],
                 "threshold": float(self.filter["threshold"]),
             },
-            "values": summary(values),
-            "below": int(np.count_nonzero(values < self.edges[0])),
-            "above": int(np.count_nonzero(values > self.edges[-1])),
-            "zero": int(np.count_nonzero(values == 0)),
-            "edges": self.edges.tolist(),
+            "values": pair_summary,
+            "below": int(below),
+            "above": int(above),
+            "zero": int(zero),
+            "edges": np.asarray(self.edges).tolist(),
             "observed": counts.tolist(),
             "muon": (total * muon).tolist(),
             "fit": fit,
             "template_median": template_median,
             "scale": median / template_median if median and template_median > 0 else None,
+            "raw": raw,
         }
+
+    def diagnose(self, times, fields, adc, d_field, u_field):
+        """diagnose_histogram from raw readings."""
+        times = np.asarray(times)
+        fields = np.asarray(fields)
+        adc = np.asarray(adc, dtype=np.float64)
+        d_adc, u_adc = adc[fields == d_field], adc[fields == u_field]
+        values, matched = self.pair_values(times, fields, adc, d_field, u_field)
+        edges = np.asarray(self.edges)
+        raw_edges = RAW_START + np.arange(RAW_BINS + 1)
+        return self.diagnose_histogram(
+            np.histogram(values, bins=edges)[0],
+            summary(values),
+            summary(d_adc),
+            summary(u_adc),
+            matched,
+            np.count_nonzero(values < edges[0]),
+            np.count_nonzero(values > edges[-1]),
+            np.count_nonzero(values == 0),
+            {
+                "start": RAW_START,
+                "d": np.histogram(d_adc, bins=raw_edges)[0].tolist(),
+                "u": np.histogram(u_adc, bins=raw_edges)[0].tolist(),
+            },
+        )

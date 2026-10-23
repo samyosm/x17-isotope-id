@@ -41,9 +41,17 @@ def validate_counts(counts, label):
         raise ValueError(f"{label}: counts must be finite and nonnegative")
 
 
+def describe_bins(edges):
+    return f"{len(edges) - 1} bins from {edges[0]:g} to {edges[-1]:g}"
+
+
 def validate_bins(edges, reference_edges, label):
     if len(edges) != len(reference_edges) or not np.allclose(edges, reference_edges):
-        raise ValueError(f"{label}: bin edges differ from the reference templates")
+        raise ValueError(
+            f"{label}: bin edges differ from the reference templates "
+            f"({describe_bins(edges)} instead of {describe_bins(reference_edges)}); "
+            "regenerate every template with scripts/initialize.py"
+        )
 
 
 def load_histogram(path, name=HISTOGRAM_NAME):
