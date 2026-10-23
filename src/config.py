@@ -48,7 +48,9 @@ def load_config(path=DEFAULT_PATH):
 
     config["io"]["output_dir"] = resolve(config["io"]["output_dir"])
     for source in config["sources"]:
-        source["path"] = resolve(source["path"])
+        if "path" in source:
+            source["path"] = resolve(source["path"])
+        source["stem"] = source["path"].stem if "path" in source else source.get("name")
 
     validate(config)
     return config
@@ -88,9 +90,9 @@ def validate(config):
     if not 0 < clf["mixed_fraction"] < 1:
         raise ValueError("classifier.mixed_fraction must be between 0 and 1")
     for source in config["sources"]:
-        if "path" not in source or "isotope" not in source:
-            raise ValueError("Each [[sources]] entry needs 'path' and 'isotope'")
-    stems = [source["path"].stem for source in config["sources"]]
+        if "isotope" not in source or not source["stem"]:
+            raise ValueError("Each [[sources]] entry needs 'isotope' and 'path' (or 'name')")
+    stems = [source["stem"] for source in config["sources"]]
     if len(set(stems)) != len(stems):
         raise ValueError("Source files must have distinct filenames")
 

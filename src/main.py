@@ -56,8 +56,7 @@ def load_histogram(path, name=HISTOGRAM_NAME):
 
 
 def source_file(source, config, suffix):
-    stem = source["path"].stem
-    return config["io"]["output_dir"] / f"{stem}_digitized_histogram_{suffix}.root"
+    return config["io"]["output_dir"] / f"{source['stem']}_digitized_histogram_{suffix}.root"
 
 
 def normalize(counts, alpha):
@@ -71,7 +70,7 @@ def load_templates(config):
         hist, hist_edges = load_histogram(source_file(source, config, "ref"))
         if edges is None:
             edges = hist_edges
-        validate_bins(hist_edges, edges, str(source["path"]))
+        validate_bins(hist_edges, edges, source["stem"])
         isotope = source["isotope"]
         counts[isotope] = counts.get(isotope, 0) + hist
     alpha = config["classifier"]["pseudocount"]

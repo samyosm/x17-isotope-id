@@ -27,12 +27,14 @@ from histogram import histogram_file
 
 
 def digitized_path(source, config):
-    return config["io"]["output_dir"] / f"{source['path'].stem}_digitized.root"
+    return config["io"]["output_dir"] / f"{source['stem']}_digitized.root"
 
 
 def initialize_source(source, config, only, position=None):
     desc = source["isotope"]
     if only != "histogram":
+        if "path" not in source:
+            raise ValueError(f"{desc}: digitizing needs 'path' in its [[sources]] entry")
         digitize_file(
             source["path"], digitized_path(source, config), config,
             f"{desc} digitize", position,

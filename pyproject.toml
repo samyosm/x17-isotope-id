@@ -9,6 +9,10 @@ description = "Template-fit identification of the radioactive source near a scin
 requires-python = ">=3.12"
 dependencies = ["numpy", "scipy", "uproot"]
 
+[project.optional-dependencies]
+scripts = ["awkward", "tqdm"]            # scripts/ (digitize, histogram, initialize)
+analysis = ["awkward", "tqdm", "matplotlib"]  # analysis/ figures
+
 # The modules in src/ import each other by flat name, so they are installed as top-level
 # modules. The entry point for other programs is `isotope_id`.
 [tool.hatch.build.targets.wheel]

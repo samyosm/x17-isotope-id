@@ -45,7 +45,10 @@ windows_per_class = 200 # windows per truth class and kind (pure, mixed)
 mixed_fraction = 0.2           # isotope share of the measurements in a mixed window
 seed = 1729                    # window construction
 
-# Files processed by scripts/initialize.py; the isotope label is not used yet.
+# Files processed by scripts/initialize.py.
+# `path` (simulation file) is only needed to digitize/histogram. To only classify, a source may
+# instead give `name` (the file name without .root) and just the data/NAME_digitized_histogram_ref.root
+# file has to exist.
 
 [[sources]]
 path = "~/x17-detector-study/data/simulations/0=cosmic-muons-2026.10.15-seed1729.root"
