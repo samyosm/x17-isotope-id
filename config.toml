@@ -68,7 +68,7 @@ seed = 1729                    # window construction
 # file has to exist.
 
 [[sources]]
-path = "~/x17-detector-study/data/simulations/0=cosmic-muons-2026.10.15-seed1729.root"
+path = "~/x17-detector-study/data/simulations/0=cosmic-muons-2026.10.13-seed1733.root"
 isotope = "cosmic-muons"
 
 [[sources]]
