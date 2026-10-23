@@ -46,19 +46,21 @@ def load_config(path=DEFAULT_PATH):
     clf.setdefault("mixed_fraction", 0.2)
     clf.setdefault("seed", 1729)
 
-    config["io"]["output_dir"] = resolve(config["io"]["output_dir"])
+    base = Path(path).resolve().parent
+    config["io"]["output_dir"] = resolve(config["io"]["output_dir"], base)
     for source in config["sources"]:
         if "path" in source:
-            source["path"] = resolve(source["path"])
+            source["path"] = resolve(source["path"], base)
         source["stem"] = source["path"].stem if "path" in source else source.get("name")
 
     validate(config)
     return config
 
 
-def resolve(path):
+def resolve(path, base=ROOT):
+    """Relative paths are relative to the folder of the config file."""
     path = Path(path).expanduser()
-    return path if path.is_absolute() else ROOT / path
+    return path if path.is_absolute() else base / path
 
 
 def validate(config):
