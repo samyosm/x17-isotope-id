@@ -6,15 +6,18 @@ channel of its D-end PMT and the channel of its U-end PMT. For each group the fu
 
   1. keeps the readings of the two channels,
   2. pairs the U and D readings that share the same time (src/pairing.py),
-  3. histograms sqrt(U * D) of the pairs on the template bins (config histogram.*),
-  4. classifies that single histogram with the template fit (src/main.py).
+  3. drops the pairs rejected by the acquisition threshold (config filter.*, as in the
+     simulation: the stored readings must reach the threshold, "both" or "either"),
+  4. subtracts the channel pedestals (config defaults / channels.*) and histograms
+     sqrt((U - PU) * (D - PD)) on the template bins (config histogram.*),
+  5. classifies that single histogram with the template fit (src/main.py).
 
 Usage:
   identifier = Identifier.from_config()          # loads the templates once
   results = identifier.identify(times, fields, adc, {"3": ("FPGA1_ADCE", "FPGA3_ADCE")})
 
-No calibration is applied: the values are used as stored, so the spectra only match the
-templates if the detector data has the same scale as the templates.
+No gain is applied: the values are used as stored, so the spectra only match the templates
+if the detector data has the same scale as the templates.
 """
 
 import math
@@ -50,6 +53,10 @@ def summary(values):
     }
 
 
+def config_defaults(config):
+    return config.get("defaults", {})
+
+
 class Identifier:
     def __init__(self, config):
         self.config = config
@@ -58,26 +65,49 @@ class Identifier:
         self.muon_isotope = clf["muon_isotope"]
         self.threshold = clf["detection_threshold"]
         self.min_pairs = MIN_PAIRS
+        self.filter = config["filter"]
+
+    def pedestal(self, field):
+        params = config_defaults(self.config) | self.config["channels"].get(field, {})
+        return float(params.get("pedestal", 0.0))
+
+    def accepted(self, d_raw, u_raw):
+        """Mask of the pairs that pass the acquisition threshold (all, if it is disabled)."""
+        if not self.filter["enabled"]:
+            return np.ones(len(d_raw), dtype=bool)
+        threshold = float(self.filter["threshold"])
+        d_ok, u_ok = d_raw >= threshold, u_raw >= threshold
+        return d_ok & u_ok if self.filter["mode"] == "both" else d_ok | u_ok
 
     @classmethod
     def from_config(cls, path=None):
         return cls(load_config(path) if path else load_config())
 
-    def pair_values(self, times, fields, adc, d_field, u_field):
-        """sqrt(U * D) of the U and D readings with equal times for one scintillator."""
+    def matched_pairs(self, times, fields, adc, d_field, u_field):
+        """Stored (U, D) readings with equal times for one scintillator."""
         is_d, is_u = fields == d_field, fields == u_field
         used = is_d | is_u
         end = np.where(is_u[used], U_END, D_END)
         slot = np.zeros(len(end), dtype=np.int64)
-        u_charge, d_charge = match_pairs(times[used], end, slot, adc[used])
-        return pair_variable(u_charge, d_charge)
+        return match_pairs(times[used], end, slot, adc[used])
+
+    def pair_values(self, times, fields, adc, d_field, u_field):
+        """sqrt((U - PU) * (D - PD)) of the accepted pairs of one scintillator.
+
+        Returns (values, matched): the values and the number of pairs before the threshold.
+        """
+        u_raw, d_raw = self.matched_pairs(times, fields, adc, d_field, u_field)
+        keep = self.accepted(d_raw, u_raw)
+        u_charge = u_raw[keep] - self.pedestal(u_field)
+        d_charge = d_raw[keep] - self.pedestal(d_field)
+        return pair_variable(u_charge, d_charge), len(u_raw)
 
     def identify(self, times, fields, adc, groups, min_pairs=None):
         """Classify one histogram per group.
 
         times, fields, adc: equally long arrays (integer times, channel names, ADC values).
         groups: {group name: (D-end channel, U-end channel)}.
-        Returns a list, in the order of groups, of dicts with: group, pairs (matched U/D
+        Returns a list, in the order of groups, of dicts with: group, pairs (accepted U/D
         pairs), in_range (pairs inside the histogram range), label (isotope, "muon-only", or
         None when fewer than min_pairs pairs are in range; default self.min_pairs), best,
         fraction, delta, margin and nll (see main.classify; None when label is None).
@@ -91,7 +121,7 @@ class Identifier:
 
         results = []
         for name, (d_field, u_field) in groups.items():
-            values = self.pair_values(times, fields, adc, d_field, u_field)
+            values, _ = self.pair_values(times, fields, adc, d_field, u_field)
             counts = np.histogram(values, bins=self.edges)[0]
             row = {
                 "group": name,
@@ -121,7 +151,8 @@ class Identifier:
         """Why a scintillator is classified as it is: data scale against the templates.
 
         Returns a dict with: d / u (summary of the raw readings of each channel), pairs
-        (number of matched U/D pairs), unpaired (readings without a partner of equal time),
+        (accepted U/D pairs), matched (pairs of equal time before the acquisition threshold),
+        filter (the threshold settings), unpaired (readings without a partner of equal time),
         values (summary of sqrt(U * D)), below / above / zero (pairs under the histogram range,
         over it, and exactly 0 after clipping negatives), edges, observed (counts per bin),
         muon (the muon template scaled to the observed in-range total), fit (the best isotope
@@ -133,7 +164,7 @@ class Identifier:
         fields = np.asarray(fields)
         adc = np.asarray(adc, dtype=np.float64)
         d_adc, u_adc = adc[fields == d_field], adc[fields == u_field]
-        values = self.pair_values(times, fields, adc, d_field, u_field)
+        values, matched = self.pair_values(times, fields, adc, d_field, u_field)
         counts = np.histogram(values, bins=self.edges)[0]
         total = float(counts.sum())
 
@@ -157,7 +188,13 @@ class Identifier:
             "d": summary(d_adc),
             "u": summary(u_adc),
             "pairs": int(len(values)),
-            "unpaired": int(len(d_adc) + len(u_adc) - 2 * len(values)),
+            "matched": int(matched),
+            "unpaired": int(len(d_adc) + len(u_adc) - 2 * matched),
+            "filter": {
+                "enabled": bool(self.filter["enabled"]),
+                "mode": self.filter["mode"],
+                "threshold": float(self.filter["threshold"]),
+            },
             "values": summary(values),
             "below": int(np.count_nonzero(values < self.edges[0])),
             "above": int(np.count_nonzero(values > self.edges[-1])),

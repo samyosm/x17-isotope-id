@@ -1,3 +1,13 @@
+# Calibration values in this file are marked with their origin:
+#   [report]   taken from the summer 2026 internal technical note "Scintillator Calibration for
+#              the X17 Experiment" (Laboratoire R.-J.-A.-Lévesque, Université de Montréal,
+#              report.pdf), the lab's official calibration reference
+#   [measured] read from the detector data with the Inspect page of the registry website
+#              (scintillator 0, 30 minutes of run data, 2026-10-23); NOT in the report
+#   [choice]   our own setting, with the reason given
+# After changing digitization, filter or histogram values, regenerate the templates
+# (scripts/initialize.py) and re-calibrate classifier.detection_threshold (src/main.py --evaluate).
+
 [io]
 tree = "vf48"
 chunk_size = 100000
@@ -8,29 +18,36 @@ seed = 1729
 adc_max = 32767
 
 [defaults]
-gain = 1.0
+gain = 1.0                     # [choice] unverified: the report gives keV/ADC (gamma = 18.7-24.0, its Table 5),
+                               # not ADC per photoelectron. The real muon peak is ~735-800 ADC (report, Sec. 2.4
+                               # and Fig. 15); check with the ratio on the Inspect page once the filter is on.
 spe_relative_sigma = 0.5
-pedestal = 0.0
-electronic_noise_sigma = 0.0
+pedestal = 4.0                 # [measured] mean of the D0 (3) and U0 (5) baselines; other channels not yet measured
+electronic_noise_sigma = 2.5   # [measured] mean of the D0 (1.9) and U0 (3.4) baseline spreads
 
-# Optional channel-specific calibration overrides:
-# [channels.FPGA0_ADCA]
-# gain = 2.5
-# pedestal = 12.0
-# electronic_noise_sigma = 1.8
+# Channel-specific calibration overrides.
+[channels.FPGA0_ADCA]          # D0, [measured]
+pedestal = 3.0
+electronic_noise_sigma = 1.9
 
+[channels.FPGA2_ADCA]          # U0, [measured]
+pedestal = 5.0
+electronic_noise_sigma = 3.4
+
+# Acquisition threshold on the stored ADC of the readings. Without it, baseline noise dominates the pairs.
 [filter]
-enabled = false
-mode = "both"  # "both" or "either"
-threshold = 10
+enabled = true  # [report] Sec. 4.2: radioisotope data is cleaned with a hard cut on both PMTs
+mode = "both"   # [report] "U, D > 20 ADC"; "both" or "either"
+threshold = 20  # [report] Sec. 4.2 (a higher value would cut the Cs-137 and Bi-207 Compton edges, ~18-50 ADC)
 
 
 [histogram]
 ref_fraction = 0.75  # fraction of matched U/D pairs in the reference histogram; the rest go to the test histogram
 seed = 1729          # random assignment of pairs to reference/test
-bins = 200
+bins = 500          # [choice] 3 ADC per bin: the Cs-137, Bi-207 and Na-22 Compton edges lie at only ~18-50 ADC
 min = 0.0
-max = 1200.0        # histogram range of sqrt((U-PU)(D-PD)); fixed so ref and test share bins
+max = 1500.0        # [report] muon spectra of sqrt(UD) span 200-1500 ADC (Figs. 15-16); fixed so ref and test share bins
+                    # histogram range of sqrt((U-PU)(D-PD))
 # A PMT pair is a U row and a D row with the same _time and the same ADC letter,
 # on FPGAs at the same position in these lists (D[i] <-> U[i]).
 d_fpgas = [0, 1]
