@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "x17-isotope-id"
+version = "0.1.0"
+description = "Template-fit identification of the radioactive source near a scintillator"
+requires-python = ">=3.12"
+dependencies = ["numpy", "scipy", "uproot"]
+
+# The modules in src/ import each other by flat name, so they are installed as top-level
+# modules. The entry point for other programs is `isotope_id`.
+[tool.hatch.build.targets.wheel]
+include = ["src/*.py"]
+sources = ["src"]
