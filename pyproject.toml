@@ -9,9 +9,12 @@ description = "Template-fit identification of the radioactive source near a scin
 requires-python = ">=3.12"
 dependencies = ["numpy", "scipy", "uproot"]
 
-[project.optional-dependencies]
-scripts = ["awkward", "tqdm"]            # scripts/ (digitize, histogram, initialize)
-analysis = ["awkward", "tqdm", "matplotlib"]  # analysis/ figures
+# Not installed by default (the server only needs the dependencies above):
+#   uv sync --group scripts     scripts/ (digitize, histogram, initialize)
+#   uv sync --group analysis    scripts/ and analysis/ figures
+[dependency-groups]
+scripts = ["awkward", "tqdm"]
+analysis = ["awkward", "tqdm", "matplotlib"]
 
 # The modules in src/ import each other by flat name, so they are installed as top-level
 # modules. The entry point for other programs is `isotope_id`.
